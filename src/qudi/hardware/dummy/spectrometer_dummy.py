@@ -35,7 +35,7 @@ class SpectrometerDummy(SpectrometerInterface):
     Example config for copy-paste:
 
     spectrometer_dummy:
-        module.Class: 'spectrometer.spectrometer_dummy.SpectrometerInterfaceDummy'
+        module.Class: 'dummy.spectrometer_dummy.SpectrometerInterfaceDummy'
 
     """
 

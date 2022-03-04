@@ -39,7 +39,7 @@ class MotorDummy(Base, MotorInterface):
     Example config for copy-paste:
 
     motor_dummy:
-        module.Class: 'motor.motor_dummy.MotorDummy'
+        module.Class: 'dummy.motor_dummy.MotorDummy'
 
     """
 

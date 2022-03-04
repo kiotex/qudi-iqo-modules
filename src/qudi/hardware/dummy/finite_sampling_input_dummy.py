@@ -37,7 +37,12 @@ class SimulationMode(Enum):
 
 class FiniteSamplingInputDummy(FiniteSamplingInputInterface):
     """
-    ToDo: Document
+    Implementation of the FiniteSamplingInput interface methods for a dummy usage.
+
+    Example config for copy-paste:
+
+    finite_sampling_input_dummy:
+        module.Class: 'finite_sampling_input_dummy.FiniteSamplingInputDummy'
     """
 
     _sample_rate_limits = ConfigOption(name='sample_rate_limits', default=(1, 1e6))

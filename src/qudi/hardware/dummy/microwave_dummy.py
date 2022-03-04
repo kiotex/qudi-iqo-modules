@@ -33,8 +33,8 @@ class MicrowaveDummy(MicrowaveInterface):
 
     Example config for copy-paste:
 
-    mw_source_dummy:
-        module.Class: 'microwave.mw_source_dummy.MicrowaveDummy'
+    microwave_dummy:
+        module.Class: 'dummy.microwave_dummy.MicrowaveDummy'
     """
 
     def __init__(self, *args, **kwargs):
