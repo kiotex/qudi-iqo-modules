@@ -193,6 +193,14 @@ class NIXSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
             assert self._physical_sample_clock_output in self.__all_digital_terminals, \
                 f'Physical sample clock terminal specified in config is invalid'
 
+        # Check external sample clock frequency
+        if self._external_sample_clock_source is None:
+            self._external_sample_clock_frequency = None
+        elif self._external_sample_clock_frequency is None:
+            self.log.error('External sample clock source supplied but no clock frequency. '
+                           'Falling back to internal clock instead.')
+            self._external_sample_clock_source = None
+
         # Create constraints object and perform sanity/type checking
         self._channel_units = self._digital_channel_units.copy()
         self._channel_units.update(self._analog_channel_units)
@@ -208,7 +216,10 @@ class NIXSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
         self._channel_units = self._constraints.channel_units
 
         # initialize default settings
-        self._sample_rate = self._constraints.max_sample_rate
+        if self._external_sample_clock_frequency is not None:
+            self._sample_rate = float(self._external_sample_clock_frequency)
+        else:
+            self._sample_rate = self._constraints.max_sample_rate
         self._frame_size = 0
 
         self.set_active_channels(digital_sources.union(analog_sources))
@@ -236,6 +247,23 @@ class NIXSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
         """
         return self._sample_rate
 
+    @sample_rate.setter
+    def sample_rate(self, rate):
+        self.set_sample_rate(rate)
+        return
+
+    def set_sample_rate(self, rate):
+        sample_rate = float(rate)
+        assert self._constraints.sample_rate_in_range(sample_rate)[0], \
+            f'Sample rate "{sample_rate}Hz" to set is out of ' \
+            f'bounds {self._constraints.sample_rate_limits}'
+        with self._thread_lock:
+            assert self.module_state() == 'idle', \
+                'Unable to set sample rate. Data acquisition in progress.'
+            self._sample_rate = sample_rate
+            self.log.debug(f'set sample_rate to {self._sample_rate}')
+        return
+
     @property
     def frame_size(self):
         return self._frame_size
@@ -256,17 +284,6 @@ class NIXSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
                     return self._ai_task_handle.in_stream.avail_samp_per_chan
             return 0
 
-    def set_sample_rate(self, rate):
-        sample_rate = float(rate)
-        assert self._constraints.sample_rate_in_range(sample_rate)[0], \
-            f'Sample rate "{sample_rate}Hz" to set is out of ' \
-            f'bounds {self._constraints.sample_rate_limits}'
-        with self._thread_lock:
-            assert self.module_state() == 'idle', \
-                'Unable to set sample rate. Data acquisition in progress.'
-            self._sample_rate = sample_rate
-            self.log.debug(f'set sample_rate to {self._sample_rate}')
-        return
 
     def set_active_channels(self, channels):
         """ Will set the currently active channels. All other channels will be deactivated.
@@ -400,7 +417,7 @@ class NIXSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
                 f'pending for acquisition ({self._frame_size}).'
             )
 
-        if number_of_samples is not None and self.module_state() == 'locked':
+        """if number_of_samples is not None and self.module_state() == 'locked':
             request_time = time.time()
             while number_of_samples > self.samples_in_buffer:  # TODO: Check whether this works with a real HW
                 # TODO could one use the ni timeout of the reader class here?
@@ -409,7 +426,7 @@ class NIXSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
                 else:
                     self.terminate_all_tasks()
                     self.module_state.unlock()
-                    raise TimeoutError(f'Acquiring {number_of_samples} samples took longer than the whole frame.')
+                    raise TimeoutError(f'Acquiring {number_of_samples} samples took longer than the whole frame.')"""
         try:
             # TODO: What if counter stops while waiting for samples?
 
@@ -479,6 +496,10 @@ class NIXSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
 
         @return int: error code (0: OK, -1: Error)
         """
+        """# Return if sample clock is externally supplied
+        if self._external_sample_clock_source is not None:
+            return 0"""
+
         if self._clk_task_handle is not None:
             self.log.error('Sample clock task is already running. Unable to set up a new clock '
                            'before you close the previous one.')
@@ -564,8 +585,15 @@ class NIXSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
             self.terminate_all_tasks()
             return -1
 
-        clock_channel = '/{0}InternalOutput'.format(self._clk_task_handle.channel_names[0])
-        # sample_freq = float(self._clk_task_handle.co_channels.all.co_pulse_freq)
+
+
+        if self._external_sample_clock_source:
+            clock_channel = '/{0}/{1}'.format(self._device_name, self._external_sample_clock_source)
+            # sample_freq = float(self._external_sample_clock_frequency)
+        else:
+            clock_channel = '/{0}InternalOutput'.format(self._clk_task_handle.channel_names[0])
+            # sample_freq = float(self._clk_task_handle.co_channels.all.co_pulse_freq)
+        sample_freq = self.sample_rate
 
         # Set up digital counting tasks
         for i, chnl in enumerate(digital_channels):
@@ -689,8 +717,13 @@ class NIXSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
             self.terminate_all_tasks()
             return -1
 
-        clock_channel = '/{0}InternalOutput'.format(self._clk_task_handle.channel_names[0])
-        sample_freq = float(self._clk_task_handle.co_channels.all.co_pulse_freq)
+        if self._external_sample_clock_source:
+            clock_channel = '/{0}/{1}'.format(self._device_name, self._external_sample_clock_source)
+            # sample_freq = float(self._external_sample_clock_frequency)
+        else:
+            clock_channel = '/{0}InternalOutput'.format(self._clk_task_handle.channel_names[0])
+            # sample_freq = float(self._clk_task_handle.co_channels.all.co_pulse_freq)
+        sample_freq = self.sample_rate
 
         # Set up analog input task
         task_name = 'AnalogIn_{0:d}'.format(id(self))
@@ -836,6 +869,21 @@ class NIXSeriesFiniteSamplingInput(FiniteSamplingInputInterface):
         assert (di_channels or ai_channels), f'No channels could be extracted from {*input_channels,}'
 
         return tuple(di_channels), tuple(ai_channels)
+
+    def _clk_frequency_valid(self, frequency):
+        if self._analog_sources:
+            max_rate = self._constraints.combined_sample_rate.max
+            min_rate = self._constraints.combined_sample_rate.min
+        else:
+            max_rate = self._constraints.digital_sample_rate.max
+            min_rate = self._constraints.digital_sample_rate.min
+        valid = (min_rate <= frequency <= max_rate)
+        if not valid:
+            self.log.warning(
+                    'Sample rate requested ({0:.3e}Hz) is out of bounds. Please choose '
+                    'a value between {1:.3e}Hz and {2:.3e}Hz. Value will be clipped to '
+                    'the closest boundary.'.format(frequency, min_rate, max_rate))
+        return valid
 
 
 class NiInitError(Exception):
