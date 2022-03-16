@@ -255,3 +255,6 @@ class MicrowaveDummy(MicrowaveInterface):
             if self._is_scanning:
                 self.log.debug('Frequency scan soft reset')
                 time.sleep(0.5)
+
+    def trigger(self):
+        self.log.debug(f'Microwave triggered')
